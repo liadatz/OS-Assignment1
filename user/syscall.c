@@ -21,9 +21,23 @@ void pause_system_dem(int interval, int pause_seconds, int loop_size) {
     printf("\n");
 }
 
+void kill_system_dem(int interval, int loop_size) {
+    int pid = getpid();
+    for (int i = 0; i < loop_size; i++) {
+        if (i % interval == 0 && pid == getpid()) {
+            printf("kill system %d/%d completed.\n", i, loop_size);
+        }
+        if (i == loop_size / 2) {
+            kill_system();
+        }
+    }
+    printf("\n");
+}
+
 int
 main(int argc, char *argv[])
 {
     pause_system_dem(10, 10, 100);
+    kill_system_dem(10, 100);
     exit(0);
 }

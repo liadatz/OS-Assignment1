@@ -451,8 +451,12 @@ scheduler(void)
     intr_on();
 
     for(p = proc; p < &proc[NPROC]; p++) {
+      uint xticks;
+      acquire(&tickslock);
+      xticks = ticks;
+      release(&tickslock);
       acquire(&p->lock);
-      if (ticks >= last_pause || p->pid < 3) {
+      if (xticks >= last_pause || p->pid < 3) {
         if(p->state == RUNNABLE) {
         // Switch to chosen process.  It is the process's job
         // to release its lock and then reacquire it
@@ -668,4 +672,23 @@ pause_system(int seconds)
   last_pause = ticks + (seconds * 10);
   yield();
   return 0;
+}
+
+int
+kill_system(void)
+{
+  struct proc *p;
+
+  for(p = proc; p < &proc[NPROC]; p++){
+    acquire(&p->lock);
+    if(p->pid > 2){
+      p->killed = 1;
+      if(p->state == SLEEPING){
+        // Wake process from sleep().
+        p->state = RUNNABLE;
+      }
+    }
+    release(&p->lock);
+  }
+  return 0; 
 }
