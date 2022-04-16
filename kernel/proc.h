@@ -98,6 +98,9 @@ struct proc {
   int sleeping_time;
   int runnable_time;
   int running_time;
+  int turned_runnable;
+  int turned_running;
+  int turned_sleeping;
 
   // wait_lock must be held when using this:
   struct proc *parent;         // Parent process
