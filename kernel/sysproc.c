@@ -116,6 +116,5 @@ uint64
 sys_print_stats(void)
 {
   print_stats();
-  printf("test");
   return 0;
 }

@@ -139,6 +139,7 @@ UPROGS=\
 	$U/_zombie\
 	$U/_syscall\
 	$U/_printstats\
+	$U/_fact\
 
 
 fs.img: mkfs/mkfs README $(UPROGS)

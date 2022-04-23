@@ -65,7 +65,7 @@ procinit(void)
 {
   struct proc *p;
 
-  // start_time = ticks;
+  start_time = ticks;
   
   initlock(&pid_lock, "nextpid");
   initlock(&wait_lock, "wait_lock");
@@ -138,9 +138,13 @@ allocproc(void)
 found:
   p->pid = allocpid();
   p->state = USED;
+
+  p->start_burst = 0;
   p->last_ticks = 0;
   p->mean_ticks = 0;
-  p->last_runnable_time = 0;
+
+  p->last_runnable_time = ticks;
+
   p->runnable_time = 0;
   p->running_time = 0;
   p->sleeping_time = 0;
@@ -336,7 +340,7 @@ fork(void)
   np->parent = p;
   release(&wait_lock);
 
-  np->turned_runnable = ticks;
+  // np->turned_runnable = ticks;
 
   acquire(&np->lock);
   np->state = RUNNABLE;
@@ -396,10 +400,14 @@ exit(int status)
   acquire(&p->lock);
 
 
-  printf("exit\nbefore: %d\nupdate: %d\nafter: %d\n",p->running_time, ticks - p->turned_running, p->running_time + (ticks - p->turned_running));
-  printf("ticks: %d\nturned ruunning: %d\n", ticks, p->turned_running);
+  // printf("exit\nbefore: %d\nupdate: %d\nafter: %d\n",p->running_time, ticks - p->turned_running, p->running_time + (ticks - p->turned_running));
+  // printf("ticks: %d\nturned ruunning: %d\n", ticks, p->turned_running);
+  // printf("exit-\n");
+  // printf("pid: %d\n" ,p->pid);
+  // printf("ticks: %d\n", ticks);
+  // printf("turned running time: %d\n", p->turned_running);
 
-  p->running_time = p->running_time + (ticks - p->turned_running);
+  // p->running_time = p->running_time + (ticks - p->turned_running);
   p->xstate = status;
   p->state = ZOMBIE;
 
@@ -409,11 +417,10 @@ exit(int status)
   running_processes_mean = ((running_processes_mean * num_of_process) + p->running_time) / (num_of_process + 1);
   sleeping_processes_mean = ((sleeping_processes_mean * num_of_process) + p->sleeping_time) / (num_of_process + 1);
   runnable_processes_mean = ((runnable_processes_mean * num_of_process) + p->runnable_time) / (num_of_process + 1);
+  program_time =+ p->running_time;
+  cpu_utilization = (program_time * 100) / (ticks - start_time);
+    // printf("pid: %d, running time: %d\n", p->pid, p->running_time);
 
-  if (p->pid > 2) {
-    program_time =+ p->running_time;
-    cpu_utilization = (program_time * 100) / (ticks - start_time);
-  }
   
   num_of_process++;
 
@@ -479,13 +486,13 @@ struct proc* find_min_by(int by_mean_ticks){
       acquire(&p->lock);
         if (ticks >= last_pause || p->pid < 3) {
         // printf("status runnable: %d, mean ticks: %d\n", p->state == RUNNABLE, p->mean_ticks);
-        if(by_mean_ticks && p->state == RUNNABLE && p->mean_ticks <= min_proc->mean_ticks) {
-          // printf("found");
-          min_proc = p;
-        }
-        if(!by_mean_ticks && p->state == RUNNABLE && p->last_runnable_time <= min_proc->last_runnable_time) {
-          min_proc = p;
-        }
+          if(by_mean_ticks && p->state == RUNNABLE && p->mean_ticks <= min_proc->mean_ticks) {
+            // printf("found");
+            min_proc = p;
+          }
+          if(!by_mean_ticks && p->state == RUNNABLE && p->last_runnable_time <= min_proc->last_runnable_time) {
+            min_proc = p;
+          }
       }
       release(&p->lock);
     }
@@ -520,11 +527,13 @@ scheduler(void)
           // to release its lock and then reacquire it
           // before jumping back to us.
           // printf("pid: %d running time: %d\n", p->pid,  ticks - p->turned_runnable);
-          p->runnable_time = p->runnable_time + ticks - p->turned_runnable;
-          p->turned_running = ticks;
+          // printf("sched- pid: %d, turn running: %d\n", p->pid, ticks);
           p->state = RUNNING;
+          p->turned_running = ticks;
           c->proc = p;
           swtch(&c->context, &p->context);
+
+          p->runnable_time = p->runnable_time + (ticks - p->turned_runnable);
 
           // Process is done running for now.
           // It should have changed its p->state before coming back.
@@ -542,8 +551,6 @@ scheduler(void)
 {
   struct cpu *c = mycpu();
   struct proc *min_proc;
-  uint prior_ticks;
-  uint post_ticks;
   
   c->proc = 0;
   for(;;){
@@ -552,26 +559,24 @@ scheduler(void)
 
     min_proc = find_min_by(1);
 
-    prior_ticks = ticks;
-
     acquire(&min_proc->lock);
     // Switch to chosen process.  It is the process's job
     // to release its lock and then reacquire it
     // before jumping back to us.
 
     // Update Stats
-    min_proc->runnable_time = min_proc->runnable_time + ticks - min_proc->turned_runnable;
-    min_proc->turned_running = ticks;
+    // min_proc->runnable_time = min_proc->runnable_time + ticks - min_proc->turned_runnable;
+    // min_proc->turned_running = ticks;
 
-    min_proc->state = RUNNING;
-    c->proc = min_proc;
-    swtch(&c->context, &min_proc->context);
+    min_proc->start_burst = ticks;
 
-    post_ticks = ticks;
-
-    min_proc->last_ticks = post_ticks - prior_ticks;
-    min_proc->mean_ticks = ((10 - rate) * min_proc->mean_ticks + min_proc->last_ticks * (rate)) / 10;
-    min_proc->last_ticks = 0;
+    while (min_proc->state == RUNNABLE){
+      if (ticks < last_pause && min_proc->pid >= 3)
+        break;
+      min_proc->state = RUNNING;
+      c->proc = min_proc;
+      swtch(&c->context, &min_proc->context);
+    }
 
     // Process is done running for now.
     // It should have changed its p->state before coming back.
@@ -591,12 +596,8 @@ struct cpu *c = mycpu();
     // Avoid deadlock by ensuring that devices can interrupt.
     intr_on();
     struct proc *min_proc;
-    uint prior_ticks;
-    uint post_ticks;
 
     min_proc = find_min_by(0);
-
-    prior_ticks = ticks;
 
     acquire(&min_proc->lock);
 
@@ -605,16 +606,18 @@ struct cpu *c = mycpu();
     // before jumping back to us.
 
     // Update Stats
-    min_proc->runnable_time = min_proc->runnable_time + ticks - min_proc->turned_runnable;
-    min_proc->turned_running = ticks;
+    // min_proc->runnable_time = min_proc->runnable_time + ticks - min_proc->turned_runnable;
+    // min_proc->turned_running = ticks;
 
-    min_proc->state = RUNNING;
-    c->proc = min_proc;
-    swtch(&c->context, &min_proc->context);
-
-    post_ticks = ticks;
-
-    min_proc->last_runnable_time = min_proc->last_runnable_time + post_ticks - prior_ticks;
+    while (min_proc->state == RUNNABLE){
+      if (ticks < last_pause && min_proc->pid >= 3)
+        break;
+      min_proc->state = RUNNING;
+      c->proc = min_proc;
+      swtch(&c->context, &min_proc->context);
+    }
+    
+    min_proc->last_runnable_time = ticks;
 
     // Process is done running for now.
     // It should have changed its p->state before coming back.
@@ -623,6 +626,32 @@ struct cpu *c = mycpu();
   }
 }
 #endif
+
+void
+update_ticks()
+{
+  struct proc *p;
+  for(p = proc; p < &proc[NPROC]; p++){
+    acquire(&p->lock);
+    switch (p->state) {
+    case RUNNING:
+      // printf("pid %d increse running\n", p->pid);
+      p->running_time++;
+      break;
+    case RUNNABLE:
+      // printf("pid %d increse runnable\n", p->pid);
+      p->runnable_time++;
+      break;
+    case SLEEPING:
+      // printf("pid %d increse sleeping\n", p->pid);
+      p->sleeping_time++;
+      break;
+    default:
+      break;
+    }
+    release(&p->lock);
+  }
+}
 
 // Switch to scheduler.  Must hold only p->lock
 // and have changed proc->state. Saves and restores
@@ -636,6 +665,9 @@ sched(void)
 {
   int intena;
   struct proc *p = myproc();
+
+  p->last_ticks = ticks - p->start_burst;
+  p->mean_ticks = ((10 - rate) * p->mean_ticks + p->last_ticks * (rate)) / 10;
 
   if(!holding(&p->lock))
     panic("sched p->lock");
@@ -661,11 +693,9 @@ yield(void)
 
   p->state = RUNNABLE;
   sched();
-  printf("yield\nbefore: %d\nupdate: %d\nafter: %d\n",p->running_time, ticks - p->turned_running, p->running_time + (ticks - p->turned_running));
-  printf("ticks: %d\nturned ruunning: %d\n", ticks, p->turned_running);
+  // printf("yield\nbefore: %d\nupdate: %d\nafter: %d\n",p->running_time, ticks - p->turned_running, p->running_time + (ticks - p->turned_running));
+  // printf("ticks: %d\nturned ruunning: %d\n", ticks, p->turned_running);
 
-  p->turned_runnable = ticks;
-  p->running_time = p->running_time + (ticks - p->turned_running);
   release(&p->lock);
 }
 
@@ -708,7 +738,7 @@ sleep(void *chan, struct spinlock *lk)
   release(lk);
 
   // Go to sleep.
-  p->turned_sleeping = ticks;
+  // p->turned_sleeping = ticks;
   p->chan = chan;
   p->state = SLEEPING;
 
@@ -733,8 +763,8 @@ wakeup(void *chan)
     if(p != myproc()){
       acquire(&p->lock);
       if(p->state == SLEEPING && p->chan == chan) {
-        p->sleeping_time = p->sleeping_time + ticks - p->turned_sleeping;
-        p->turned_runnable = ticks;
+        // p->sleeping_time = p->sleeping_time + ticks - p->turned_sleeping;
+        // p->turned_runnable = ticks;
         p->state = RUNNABLE;
       }
       release(&p->lock);
@@ -756,8 +786,8 @@ kill(int pid)
       p->killed = 1;
       if(p->state == SLEEPING){
         // Wake process from sleep().
-        p->sleeping_time = p->sleeping_time + ticks - p->turned_sleeping;
-        p->turned_runnable = ticks;
+        // p->sleeping_time = p->sleeping_time + ticks - p->turned_sleeping;
+        // p->turned_runnable = ticks;
         p->state = RUNNABLE;
       }
       release(&p->lock);
@@ -846,7 +876,7 @@ kill_system(void)
       p->killed = 1;
       if(p->state == SLEEPING){
         // Wake process from sleep().
-        p->turned_runnable = ticks;
+        // p->turned_runnable = ticks;
         p->state = RUNNABLE;
       }
     }
@@ -863,4 +893,5 @@ print_stats(void)
   printf("Running Proccesses Mean: %d\n", running_processes_mean);
   printf("Sleeping Processes Mean: %d\n", sleeping_processes_mean);
   printf("Runnable Processes Mean: %d\n", runnable_processes_mean);
+  printf("Overall time: %d\n", ticks - start_time); // TODO DELETE
 }
