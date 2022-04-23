@@ -578,6 +578,9 @@ scheduler(void)
       swtch(&c->context, &min_proc->context);
     }
 
+    p->last_ticks = ticks - p->start_burst;
+    p->mean_ticks = ((10 - rate) * p->mean_ticks + p->last_ticks * (rate)) / 10;
+
     // Process is done running for now.
     // It should have changed its p->state before coming back.
     c->proc = 0;
@@ -665,9 +668,6 @@ sched(void)
 {
   int intena;
   struct proc *p = myproc();
-
-  p->last_ticks = ticks - p->start_burst;
-  p->mean_ticks = ((10 - rate) * p->mean_ticks + p->last_ticks * (rate)) / 10;
 
   if(!holding(&p->lock))
     panic("sched p->lock");
