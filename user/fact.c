@@ -9,6 +9,7 @@
 #include "kernel/riscv.h"
 
 int main() {
+    sleep(10);
     int n = 30;
     int i;
     unsigned long long fact = 1;
